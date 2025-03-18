@@ -412,10 +412,10 @@ vulncheckToken = (
     else os.environ.get("vulncheckToken", None)
 )
 
-excludedGroupName = " ".join(args.excludegroup) if "excludegroup" in args else None
-overrideGroupName = " ".join(args.overridegroup) if "overridegroup" in args else None
+excludedGroupName = " ".join(args.excludegroup) if "excludegroup" in args else os.environ.get("updaterExcludeGroup", None)
+overrideGroupName = " ".join(args.overridegroup) if "overridegroup" in args else os.environ.get("updaterOverrideGroup", None)
 
-targetVersionType = args.targetversion.upper()
+targetVersionType = args.targetversion.upper() if "target" in args else os.environ.get("updaterTargetVersion").upper()
 
 canaryGroupName = " ".join(args.canarygroup) if "canarygroup" in args else None
 canaryVersion = args.canaryversion.replace('"', "") if "canaryversion" in args else None
@@ -425,7 +425,7 @@ canaryDays = args.canarydeadline
 urgentDays = args.urgentdeadline
 standardDays = args.deadline
 
-customDeadline = True if "deadline" in args and args.deadline != 14 else False
+customDeadline = True if "deadline" in args and args.deadline != 14 else os.environ.get("updaterDeadline", False)
 
 forceDays = args.force if "force" in args else None
 
