@@ -423,9 +423,9 @@ canaryOK = args.canaryok if "canaryok" in args else False
 
 canaryDays = args.canarydeadline
 urgentDays = args.urgentdeadline
-standardDays = args.deadline
+standardDays = args.deadline if "deadline" in args else int(os.environ.get("updaterDeadline"))
 
-customDeadline = True if "deadline" in args and args.deadline != 14 else os.environ.get("updaterDeadline", False)
+customDeadline = True if "deadline" in args and args.deadline != 14 else False
 
 forceDays = args.force if "force" in args else None
 
