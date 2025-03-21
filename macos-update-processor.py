@@ -456,7 +456,7 @@ try:
     ).name
 except OSError as e:
     print("Readonly file system, disabling log file.")
-    writableFileSystem = True
+    writableFileSystem = False
 
 ## Configure root logger
 logger = logging.getLogger()
