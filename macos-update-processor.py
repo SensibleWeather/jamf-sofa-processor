@@ -526,7 +526,7 @@ def endRun(exitCode=None, logLevel="info", message=None):
     logCmd = getattr(logging, logLevel, logging.info)
     if message:
         logCmd(message)
-    sys.exit(exitCode)
+    return(exitCode)
 
 
 ## Load feed file
