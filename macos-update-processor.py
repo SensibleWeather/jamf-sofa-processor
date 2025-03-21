@@ -100,7 +100,7 @@ import time
 import sys
 import requests
 from packaging.version import Version
-from pathlib import Path
+from pathlib2 import Path
 from datetime import datetime, timedelta, timezone
 from tempfile import NamedTemporaryFile
 

@@ -1,4 +1,4 @@
 jamf-pro-sdk
 packaging
-pathlib
+pathlib2
 requests
