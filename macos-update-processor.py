@@ -432,7 +432,7 @@ forceDays = args.force if "force" in args else None
 dataFilePath = (
     Path(args.datafile)
     if "datafile" in args
-    else os.environ.get("dataFile", Path.cwd().joinpath("updatePlanData.json"))
+    else Path(os.environ.get("dataFile", str(Path.cwd().joinpath("updatePlanData.json"))))
 )
 
 debug = args.debug if "debug" in args else None
