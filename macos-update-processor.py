@@ -444,20 +444,28 @@ toggleDDM = args.toggleddm if "toggleddm" in args else False
 ###############################
 
 ## Local log file
-logFile = NamedTemporaryFile(
-    prefix="jamf-ddm-deploy_",
-    suffix=f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.log",
-    delete=False,
-    dir=Path.cwd(),
-).name
+logFile = None
+writableFileSystem = True
+
+try:
+    logFile = NamedTemporaryFile(
+        prefix="jamf-ddm-deploy_",
+        suffix=f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.log",
+        delete=False,
+        dir=Path.cwd(),
+    ).name
+except OSError as e:
+    print("Readonly file system, disabling log file.")
+    writableFileSystem = True
 
 ## Configure root logger
 logger = logging.getLogger()
 logger.handlers = []
 
 ## Create handlers
-logToFile = logging.FileHandler(str(logFile))
-jamfLogToFile = logging.FileHandler(str(logFile))
+if writableFileSystem:
+    logToFile = logging.FileHandler(str(logFile))
+    jamfLogToFile = logging.FileHandler(str(logFile))
 logToConsole = logging.StreamHandler(sys.stdout)
 jamfLogToConsole = logging.StreamHandler(sys.stdout)
 
@@ -471,12 +479,14 @@ logFormat = logging.Formatter(
 
 ## Set root and handler logging levels
 logger.setLevel(logLevel)
-logToFile.setLevel(logLevel)
+if writableFileSystem:
+    logToFile.setLevel(logLevel)
 logToConsole.setLevel(logLevel)
 
 ## Set log format
-logToFile.setFormatter(logFormat)
-jamfLogToFile.setFormatter(logFormat)
+if writableFileSystem:
+    logToFile.setFormatter(logFormat)
+    jamfLogToFile.setFormatter(logFormat)
 logToConsole.setFormatter(logFormat)
 jamfLogToConsole.setFormatter(logFormat)
 
@@ -486,11 +496,13 @@ jamfLogLevel = logging.DEBUG if debug else logging.WARNING
 jamfLogger.setLevel(jamfLogLevel)
 
 ## Add handlers to jamf logger
-jamfLogger.addHandler(jamfLogToFile)
+if writableFileSystem:
+    jamfLogger.addHandler(jamfLogToFile)
 jamfLogger.addHandler(jamfLogToConsole)
 
 ## Add handlers to root logger
-logger.addHandler(logToFile)
+if writableFileSystem:
+    logger.addHandler(logToFile)
 logger.addHandler(logToConsole)
 
 ###############################
