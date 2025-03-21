@@ -432,7 +432,7 @@ forceDays = args.force if "force" in args else None
 dataFilePath = (
     Path(args.datafile)
     if "datafile" in args
-    else Path.cwd().joinpath("updatePlanData.json")
+    else os.environ.get("dataFile", Path.cwd().joinpath("updatePlanData.json"))
 )
 
 debug = args.debug if "debug" in args else None
@@ -606,7 +606,10 @@ def dumpJson(jsonData, jsonPath):
     """
     logging.debug(f"Dumping json data to {str(jsonPath)}")
     logging.debug(f"json data sent: {jsonData}")
-    jsonPath.write_text(json.dumps(jsonData, indent=4, separators=(",", ": ")))
+    try:
+        jsonPath.write_text(json.dumps(jsonData, indent=4, separators=(",", ": ")))
+    except OSError:
+        logging.debug(f"File system is not writable, refusing to write json data.")
 
 
 ## TODO: Notify a Slack channel, Okta Workflow, or some other webhook when a deployment happens
