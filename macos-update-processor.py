@@ -1810,8 +1810,8 @@ def monitorDDMStatus(toggleOption):
 
     return
 
-## Do the things
-def run():
+## Do the things - event and context can optionally be passed in case of invoking from Lambda
+def run(event=None, context=None):
     """
     Executes the macOS update processor script.
 
