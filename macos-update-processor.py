@@ -454,7 +454,7 @@ notificationTemplate = args.notificationtemplate if "notificationtemplate" in ar
 if notificationType:
     notificationType = notificationType.upper()
 
-notificationOptions = ",".join(args.notificationOptions) if "notificationoptions" in args else os.environ.get("notificationOptions", None)
+notificationOptions = ",".join(args.notificationoptions) if "notificationoptions" in args else os.environ.get("notificationOptions", None)
 
 if notificationType and not notificationURL and not notificationOptions:
     logging.info("Set notificationurl and notificationoptions when using notificationtype.")
@@ -664,10 +664,7 @@ def dumpJson(jsonData, jsonPath):
 ## Process Notification Options into a Dictionary
 def parseNotificationOptions():
     options = {}
-    delimiter = " "
-    if "," in notificationOptions:
-        delimiter = ","
-    for option in notificationOptions.split(delimiter):
+    for option in notificationOptions.split(","):
         key, value = option.split("=")
         options[key] = value
     return options
