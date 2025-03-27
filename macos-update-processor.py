@@ -688,9 +688,11 @@ def processSlackNotificationTargets(options, devicesList):
     }
     slack_user_ids = []
     for email in emailList:
-        response = requests.get(f"https://slack.com/api/users.lookupByEmail?email={email}", headers=headers)
-        response.raise_for_status()
-        slack_user_ids.append(response.json()["user"]["id"])
+        if email:
+            response = requests.get(f"https://slack.com/api/users.lookupByEmail?email={email}", headers=headers)
+            response.raise_for_status()
+            if "user" in response.json():
+                slack_user_ids.append(response.json()["user"]["id"])
     slack_formatted_str = f"<@{'>, <@'.join(slack_user_ids)}>"
     message_text = f"{slack_formatted_str}{notificationTemplate}"
     logging.debug(f"Message to be sent to Slack: {message_text}")
