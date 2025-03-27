@@ -99,6 +99,7 @@ import re
 import time
 import sys
 import requests
+from email.utils import parseaddr
 from packaging.version import Version
 from pathlib2 import Path
 from datetime import datetime, timedelta, timezone
@@ -287,6 +288,38 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--notificationtype",
+    nargs="?",
+    metavar="Notification type (SLACK is currently the only option)",
+    help="""Target notification type. Currently only supports 'SLACK'.  Will notify owners individually in a specified channel for all eligible, outdated devices.""",
+)
+
+parser.add_argument(
+    "--notificationurl",
+    nargs="?",
+    metavar="Notification url (currently only supports a Slack webhook URL)",
+    help="""Target notification url. Currently only supports a Slack webhook URL in the format 'https://hooks.slack.com/services/AAA/BBB/CCC'""",
+)
+
+parser.add_argument(
+    "--notificationtemplate",
+    nargs="?",
+    metavar="Notification template - message to send to users",
+    help="""Notification template.  Use this to customize your notification message to users""",
+)
+
+parser.add_argument(
+    "-o",
+    "--notificationoptions",
+    nargs="+",
+    metavar="Notification options in the format of key=value. Currently used to supply Slack channel and username",
+    help="""Notification options in the format of key=value. Invoke this arg multiple times to supply Slack channel and username like so: 
+    - slack_channel=my-notification-channel
+    - slack_token=xoxb-XXXXXXXX
+    """,
+)
+
+parser.add_argument(
     "--excludegroup",
     nargs="+",
     metavar="Excluded Group Name",
@@ -411,6 +444,22 @@ vulncheckToken = (
     if "vulnchecktoken" in args
     else os.environ.get("vulncheckToken", None)
 )
+
+notificationURL = args.notificationurl if "notificationurl" in args else os.environ.get("notificationURL", None)
+
+notificationType = args.notificationtype if "notificationtype" in args else os.environ.get("notificationType", None)
+
+notificationTemplate = args.notificationtemplate if "notificationtemplate" in args else os.environ.get("notificationTemplate", ", please attend to your device upgrade")
+
+if notificationType:
+    notificationType = notificationType.upper()
+
+notificationOptions = ",".join(args.notificationOptions) if "notificationoptions" in args else os.environ.get("notificationOptions", None)
+
+if notificationType and not notificationURL and not notificationOptions:
+    logging.info("Set notificationurl and notificationoptions when using notificationtype.")
+    notificationType = None
+
 
 excludedGroupName = " ".join(args.excludegroup) if "excludegroup" in args else os.environ.get("updaterExcludeGroup", None)
 overrideGroupName = " ".join(args.overridegroup) if "overridegroup" in args else os.environ.get("updaterOverrideGroup", None)
@@ -612,9 +661,73 @@ def dumpJson(jsonData, jsonPath):
         logging.debug(f"File system is not writable, refusing to write json data.")
 
 
-## TODO: Notify a Slack channel, Okta Workflow, or some other webhook when a deployment happens
-def sendNotifications():
-    pass
+## Process Notification Options into a Dictionary
+def parseNotificationOptions():
+    options = {}
+    for option in notificationOptions.split(","):
+        key, value = option.split("=")
+        options[key] = value
+    return options
+
+
+## Process devicesList into email list and retrieve Slack User IDs for them
+def processSlackNotificationTargets(options, devicesList):
+    emailList = [device.userAndLocation.username if '@' in parseaddr(device.userAndLocation.username)[1] else device.userAndLocation.email for device in devicesList]
+    logging.debug(f"Send notifications to these emails: {emailList}")
+    slack_token = options.get('slack_token')
+    if not slack_token:
+        logging.error("Please set the slack_token in notificationOptions in order to send a notification via Slack.")
+        endRun(
+            1,
+            logLevel="error",
+            message="Notification options were specified but no authorization token was found. Please use notificationoptions to specify authorization token.",
+        )
+        return
+    headers = {
+        "Authorization": f"Bearer {slack_token}"
+    }
+    slack_user_ids = []
+    for email in emailList:
+        response = requests.get(f"https://slack.com/api/users.lookupByEmail?email={email}", headers=headers)
+        response.raise_for_status()
+        slack_user_ids.append(response.json()["user"]["id"])
+    slack_formatted_str = f"<@{'>, <@'.join(slack_user_ids)}>"
+    message_text = f"{slack_formatted_str}{notificationTemplate}"
+    logging.debug(f"Message to be sent to Slack: {message_text}")
+    return message_text
+
+
+## Funnel notifications to the appropriate method
+def sendNotifications(devicesList):
+    options = parseNotificationOptions()
+    if notificationType == 'SLACK':
+        payload = processSlackNotificationTargets(options, devicesList)
+        sendSlackNotification(payload)
+    else:
+        logging.info(f"Notification type not supported: {notificationType}")
+        pass
+
+
+## Send Slack Notification - inspired by https://github.com/terraform-aws-modules/terraform-aws-notify-slack/blob/master/functions/notify_slack.py#L570
+def sendSlackNotification(payload):
+    """
+    Send notification payload to Slack
+
+    :params payload: formatted Slack message payload
+    :returns: response details from sending notification
+    """
+
+    slack_url = notificationURL
+    headers = {
+        "Content-type": "application/json"
+    }
+
+    message = {
+        "text": payload
+    }
+
+    response = requests.post(slack_url, headers=headers, data=json.dumps(message))
+    response.raise_for_status()
 
 
 ## Make sure a device is supported for the targeted version before sending a declaration
@@ -2205,6 +2318,7 @@ def run(event=None, context=None):
     outdatedDevices = jamfClient.pro_api.get_computer_inventory_v1(
         sections=[
             "GENERAL",
+            "USER_AND_LOCATION",
             "HARDWARE",
             "OPERATING_SYSTEM",
             "SECURITY",
@@ -2536,6 +2650,9 @@ def run(event=None, context=None):
 
     else:
         logging.debug(planData)
+
+    if notificationType:
+        sendNotifications(outdatedDevices)
 
     endRun(0, message=runSummary)
 
