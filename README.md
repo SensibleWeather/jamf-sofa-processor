@@ -88,6 +88,12 @@ _Deadline Options_
 - `--deadline`: Force the update to all outdated devices with the specified deadline (in days) (Default: 14)
 - __Not Implemented__ `--force`: Force the update to all outdated devices with the specified deadline (in days), overriding any configured canary data
 
+_Notification Options_
+- `notificationtype`: Type of notification to send, "SLACK" is currently the only available option.
+- `notificationurl`: Notification URL, currently only supports a Slack webhook URL
+- `notificationtemplate`: Customizable message to send to users via the notification
+- `notificationoptions`: Notification options, certain fields must be sent using this arg in order to use notifications.  For Slack "slack_token" must be provided using this field.
+
 _Other Arguments_
 - `--debug`: Enable debug logging for this script
 - `--dryrun`: Output proposed actions without executing any changes
@@ -144,6 +150,15 @@ Deadlines are specified in a number of days (relative to the current date). Work
 The great thing about using DDM for macOS update enforcement is that anything user-facing is strictly native macOS behavior.
 
 Apple's [Platform Deployment Guide](https://support.apple.com/guide/deployment/installing-and-enforcing-software-updates-depd30715cbb/1/web/1.0) has a great overview of what users should expect to see when DDM update declarations have been sent to their device. Check out the `Enforcing software updates` section for a really useful flowchart detailing when and how often users are notified about an upcoming deadline.
+
+## Notifications
+The current implementation will send a notification that mentions users by name.  This can be used to reinforce the plan sent via Jamf, to warn users that a forced update is coming, and so on using the notificationTemplate.
+
+### Slack Notifications
+You must create a Slack app in order to make use of the Slack notifications.  Navigate to [https://api.slack.com/apps](https://api.slack.com/apps).  Give your app a name and select your Slack workspace.  Under "OAuth and Permissions" find the "Scopes" section and grant "users:read.email" and "users:read" under Bot Token Scopes.  The Slack token you need to provide to the script is available a bit higher up the same page under "OAuth Tokens".  Then navigate to "Incoming Webhooks" and click "On" for "Activate Incoming Webhooks".  Once it is enabled, add a webhook by clicking the button under "Webhook URLs for your Workspace".  Use this webhook URL as the notificationurl for this script.  Finally, make sure your app is installed to the desired channel by clicking "Install App" and installing it to the workspace.
+
+## Lambda Support
+This script can be used as a Lambda function.  You will need to pass in the arguments as environment variables to the script under Configuration.
 
 ## Bugs and Feature Requests
 

@@ -68,7 +68,10 @@ Functions:
 - endRun(exitCode, logLevel, message): Exits the script with a specified exit code, logging level, and final message.
 - loadJson(jsonPath): Loads and returns data from a JSON file.
 - dumpJson(jsonData, jsonPath): Dumps data into a JSON file.
-- sendNotifications(): Placeholder for sending notifications.
+- parseNotificationOptions(): Converts notification options into a dictionary
+- processSlackNotificationTargets(options, devicesList):  Processes the emails from the device list into a string to send to Slack that mentions individual users
+- sendNotifications(devicesList): Funnel for sending notifications to the appropriate handler.
+- sendSlackNotification(payload): Send Slack notifications
 - checkModelSupported(device): Checks if a device is supported for the targeted macOS version.
 - getCVEDetails(vulnSource, cveID, requestHeaders): Queries NVD or VulnCheck for details about a specific CVE.
 - parseVulns(cveList): Determines whether the update deployment should be accelerated based on CVE impact scores.
@@ -661,7 +664,10 @@ def dumpJson(jsonData, jsonPath):
 ## Process Notification Options into a Dictionary
 def parseNotificationOptions():
     options = {}
-    for option in notificationOptions.split(","):
+    delimiter = " "
+    if "," in notificationOptions:
+        delimiter = ","
+    for option in notificationOptions.split(delimiter):
         key, value = option.split("=")
         options[key] = value
     return options
