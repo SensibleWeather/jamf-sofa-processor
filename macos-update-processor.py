@@ -313,10 +313,7 @@ parser.add_argument(
     "--notificationoptions",
     nargs="+",
     metavar="Notification options in the format of key=value. Currently used to supply Slack channel and username",
-    help="""Notification options in the format of key=value. Invoke this arg multiple times to supply Slack channel and username like so: 
-    - slack_channel=my-notification-channel
-    - slack_token=xoxb-XXXXXXXX
-    """,
+    help="""Notification options in the format of key=value. Invoke this arg multiple times to supply Slack options such as slack_token, or if using with the environment variable, set the value to a comma-delimited string""",
 )
 
 parser.add_argument(
@@ -708,7 +705,7 @@ def sendNotifications(devicesList):
         pass
 
 
-## Send Slack Notification - inspired by https://github.com/terraform-aws-modules/terraform-aws-notify-slack/blob/master/functions/notify_slack.py#L570
+## Send Slack Notification
 def sendSlackNotification(payload):
     """
     Send notification payload to Slack
