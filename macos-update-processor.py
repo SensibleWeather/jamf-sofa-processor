@@ -673,6 +673,9 @@ def parseNotificationOptions():
 ## Process devicesList into email list and retrieve Slack User IDs for them
 def processSlackNotificationTargets(options, devicesList):
     emailList = [device.userAndLocation.username if '@' in parseaddr(device.userAndLocation.username)[1] else device.userAndLocation.email for device in devicesList]
+    if len(emailList) == 0:
+        logging.debug("No emails to notify.")
+        return ""
     logging.debug(f"Send notifications to these emails: {emailList}")
     slack_token = options.get('slack_token')
     if not slack_token:
@@ -719,6 +722,8 @@ def sendSlackNotification(payload):
     :returns: response details from sending notification
     """
 
+    if len(payload) == 0:
+        return
     slack_url = notificationURL
     headers = {
         "Content-type": "application/json"
