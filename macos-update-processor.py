@@ -68,7 +68,10 @@ Functions:
 - endRun(exitCode, logLevel, message): Exits the script with a specified exit code, logging level, and final message.
 - loadJson(jsonPath): Loads and returns data from a JSON file.
 - dumpJson(jsonData, jsonPath): Dumps data into a JSON file.
-- sendNotifications(): Placeholder for sending notifications.
+- parseNotificationOptions(): Converts notification options into a dictionary
+- processSlackNotificationTargets(options, devicesList):  Processes the emails from the device list into a string to send to Slack that mentions individual users
+- sendNotifications(devicesList): Funnel for sending notifications to the appropriate handler.
+- sendSlackNotification(payload): Send Slack notifications
 - checkModelSupported(device): Checks if a device is supported for the targeted macOS version.
 - getCVEDetails(vulnSource, cveID, requestHeaders): Queries NVD or VulnCheck for details about a specific CVE.
 - parseVulns(cveList): Determines whether the update deployment should be accelerated based on CVE impact scores.
@@ -99,8 +102,9 @@ import re
 import time
 import sys
 import requests
+from email.utils import parseaddr
 from packaging.version import Version
-from pathlib import Path
+from pathlib2 import Path
 from datetime import datetime, timedelta, timezone
 from tempfile import NamedTemporaryFile
 
@@ -287,6 +291,35 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--notificationtype",
+    nargs="?",
+    metavar="Notification type (SLACK is currently the only option)",
+    help="""Target notification type. Currently only supports 'SLACK'.  Will notify owners individually in a specified channel for all eligible, outdated devices.""",
+)
+
+parser.add_argument(
+    "--notificationurl",
+    nargs="?",
+    metavar="Notification url (currently only supports a Slack webhook URL)",
+    help="""Target notification url. Currently only supports a Slack webhook URL in the format 'https://hooks.slack.com/services/AAA/BBB/CCC'""",
+)
+
+parser.add_argument(
+    "--notificationtemplate",
+    nargs="?",
+    metavar="Notification template - message to send to users",
+    help="""Notification template.  Use this to customize your notification message to users""",
+)
+
+parser.add_argument(
+    "-o",
+    "--notificationoptions",
+    nargs="+",
+    metavar="Notification options in the format of key=value. Currently used to supply Slack channel and username",
+    help="""Notification options in the format of key=value. Invoke this arg multiple times to supply Slack options such as slack_token, or if using with the environment variable, set the value to a comma-delimited string""",
+)
+
+parser.add_argument(
     "--excludegroup",
     nargs="+",
     metavar="Excluded Group Name",
@@ -412,10 +445,26 @@ vulncheckToken = (
     else os.environ.get("vulncheckToken", None)
 )
 
-excludedGroupName = " ".join(args.excludegroup) if "excludegroup" in args else None
-overrideGroupName = " ".join(args.overridegroup) if "overridegroup" in args else None
+notificationURL = args.notificationurl if "notificationurl" in args else os.environ.get("notificationURL", None)
 
-targetVersionType = args.targetversion.upper()
+notificationType = args.notificationtype if "notificationtype" in args else os.environ.get("notificationType", None)
+
+notificationTemplate = args.notificationtemplate if "notificationtemplate" in args else os.environ.get("notificationTemplate", ", please attend to your device upgrade")
+
+if notificationType:
+    notificationType = notificationType.upper()
+
+notificationOptions = ",".join(args.notificationoptions) if "notificationoptions" in args else os.environ.get("notificationOptions", None)
+
+if notificationType and not notificationURL and not notificationOptions:
+    logging.info("Set notificationurl and notificationoptions when using notificationtype.")
+    notificationType = None
+
+
+excludedGroupName = " ".join(args.excludegroup) if "excludegroup" in args else os.environ.get("updaterExcludeGroup", None)
+overrideGroupName = " ".join(args.overridegroup) if "overridegroup" in args else os.environ.get("updaterOverrideGroup", None)
+
+targetVersionType = args.targetversion.upper() if "target" in args else os.environ.get("updaterTargetVersion").upper()
 
 canaryGroupName = " ".join(args.canarygroup) if "canarygroup" in args else None
 canaryVersion = args.canaryversion.replace('"', "") if "canaryversion" in args else None
@@ -423,7 +472,7 @@ canaryOK = args.canaryok if "canaryok" in args else False
 
 canaryDays = args.canarydeadline
 urgentDays = args.urgentdeadline
-standardDays = args.deadline
+standardDays = args.deadline if "deadline" in args else int(os.environ.get("updaterDeadline"))
 
 customDeadline = True if "deadline" in args and args.deadline != 14 else False
 
@@ -432,7 +481,7 @@ forceDays = args.force if "force" in args else None
 dataFilePath = (
     Path(args.datafile)
     if "datafile" in args
-    else Path.cwd().joinpath("updatePlanData.json")
+    else Path(os.environ.get("dataFile", str(Path.cwd().joinpath("updatePlanData.json"))))
 )
 
 debug = args.debug if "debug" in args else None
@@ -444,20 +493,28 @@ toggleDDM = args.toggleddm if "toggleddm" in args else False
 ###############################
 
 ## Local log file
-logFile = NamedTemporaryFile(
-    prefix="jamf-ddm-deploy_",
-    suffix=f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.log",
-    delete=False,
-    dir=Path.cwd(),
-).name
+logFile = None
+writableFileSystem = True
+
+try:
+    logFile = NamedTemporaryFile(
+        prefix="jamf-ddm-deploy_",
+        suffix=f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.log",
+        delete=False,
+        dir=Path.cwd(),
+    ).name
+except OSError as e:
+    print("Readonly file system, disabling log file.")
+    writableFileSystem = False
 
 ## Configure root logger
 logger = logging.getLogger()
 logger.handlers = []
 
 ## Create handlers
-logToFile = logging.FileHandler(str(logFile))
-jamfLogToFile = logging.FileHandler(str(logFile))
+if writableFileSystem:
+    logToFile = logging.FileHandler(str(logFile))
+    jamfLogToFile = logging.FileHandler(str(logFile))
 logToConsole = logging.StreamHandler(sys.stdout)
 jamfLogToConsole = logging.StreamHandler(sys.stdout)
 
@@ -471,12 +528,14 @@ logFormat = logging.Formatter(
 
 ## Set root and handler logging levels
 logger.setLevel(logLevel)
-logToFile.setLevel(logLevel)
+if writableFileSystem:
+    logToFile.setLevel(logLevel)
 logToConsole.setLevel(logLevel)
 
 ## Set log format
-logToFile.setFormatter(logFormat)
-jamfLogToFile.setFormatter(logFormat)
+if writableFileSystem:
+    logToFile.setFormatter(logFormat)
+    jamfLogToFile.setFormatter(logFormat)
 logToConsole.setFormatter(logFormat)
 jamfLogToConsole.setFormatter(logFormat)
 
@@ -486,11 +545,13 @@ jamfLogLevel = logging.DEBUG if debug else logging.WARNING
 jamfLogger.setLevel(jamfLogLevel)
 
 ## Add handlers to jamf logger
-jamfLogger.addHandler(jamfLogToFile)
+if writableFileSystem:
+    jamfLogger.addHandler(jamfLogToFile)
 jamfLogger.addHandler(jamfLogToConsole)
 
 ## Add handlers to root logger
-logger.addHandler(logToFile)
+if writableFileSystem:
+    logger.addHandler(logToFile)
 logger.addHandler(logToConsole)
 
 ###############################
@@ -514,7 +575,7 @@ def endRun(exitCode=None, logLevel="info", message=None):
     logCmd = getattr(logging, logLevel, logging.info)
     if message:
         logCmd(message)
-    sys.exit(exitCode)
+    return(exitCode)
 
 
 ## Load feed file
@@ -594,12 +655,86 @@ def dumpJson(jsonData, jsonPath):
     """
     logging.debug(f"Dumping json data to {str(jsonPath)}")
     logging.debug(f"json data sent: {jsonData}")
-    jsonPath.write_text(json.dumps(jsonData, indent=4, separators=(",", ": ")))
+    try:
+        jsonPath.write_text(json.dumps(jsonData, indent=4, separators=(",", ": ")))
+    except OSError:
+        logging.debug(f"File system is not writable, refusing to write json data.")
 
 
-## TODO: Notify a Slack channel, Okta Workflow, or some other webhook when a deployment happens
-def sendNotifications():
-    pass
+## Process Notification Options into a Dictionary
+def parseNotificationOptions():
+    options = {}
+    for option in notificationOptions.split(","):
+        key, value = option.split("=")
+        options[key] = value
+    return options
+
+
+## Process devicesList into email list and retrieve Slack User IDs for them
+def processSlackNotificationTargets(options, devicesList):
+    emailList = [device.userAndLocation.username if '@' in parseaddr(device.userAndLocation.username)[1] else device.userAndLocation.email for device in devicesList]
+    if len(emailList) == 0:
+        logging.debug("No emails to notify.")
+        return ""
+    logging.debug(f"Send notifications to these emails: {emailList}")
+    slack_token = options.get('slack_token')
+    if not slack_token:
+        logging.error("Please set the slack_token in notificationOptions in order to send a notification via Slack.")
+        endRun(
+            1,
+            logLevel="error",
+            message="Notification options were specified but no authorization token was found. Please use notificationoptions to specify authorization token.",
+        )
+        return
+    headers = {
+        "Authorization": f"Bearer {slack_token}"
+    }
+    slack_user_ids = []
+    for email in emailList:
+        if email:
+            response = requests.get(f"https://slack.com/api/users.lookupByEmail?email={email}", headers=headers)
+            response.raise_for_status()
+            if "user" in response.json():
+                slack_user_ids.append(response.json()["user"]["id"])
+    slack_formatted_str = f"<@{'>, <@'.join(slack_user_ids)}>"
+    message_text = f"{slack_formatted_str}{notificationTemplate}"
+    logging.debug(f"Message to be sent to Slack: {message_text}")
+    return message_text
+
+
+## Funnel notifications to the appropriate method
+def sendNotifications(devicesList):
+    options = parseNotificationOptions()
+    if notificationType == 'SLACK':
+        payload = processSlackNotificationTargets(options, devicesList)
+        sendSlackNotification(payload)
+    else:
+        logging.info(f"Notification type not supported: {notificationType}")
+        pass
+
+
+## Send Slack Notification
+def sendSlackNotification(payload):
+    """
+    Send notification payload to Slack
+
+    :params payload: formatted Slack message payload
+    :returns: response details from sending notification
+    """
+
+    if len(payload) == 0:
+        return
+    slack_url = notificationURL
+    headers = {
+        "Content-type": "application/json"
+    }
+
+    message = {
+        "text": payload
+    }
+
+    response = requests.post(slack_url, headers=headers, data=json.dumps(message))
+    response.raise_for_status()
 
 
 ## Make sure a device is supported for the targeted version before sending a declaration
@@ -1798,8 +1933,8 @@ def monitorDDMStatus(toggleOption):
 
     return
 
-## Do the things
-def run():
+## Do the things - event and context can optionally be passed in case of invoking from Lambda
+def run(event=None, context=None):
     """
     Executes the macOS update processor script.
 
@@ -2190,6 +2325,7 @@ def run():
     outdatedDevices = jamfClient.pro_api.get_computer_inventory_v1(
         sections=[
             "GENERAL",
+            "USER_AND_LOCATION",
             "HARDWARE",
             "OPERATING_SYSTEM",
             "SECURITY",
@@ -2521,6 +2657,9 @@ def run():
 
     else:
         logging.debug(planData)
+
+    if notificationType:
+        sendNotifications(outdatedDevices)
 
     endRun(0, message=runSummary)
 
